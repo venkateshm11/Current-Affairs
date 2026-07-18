@@ -15,8 +15,67 @@ export class GeminiCallError extends Error {
   }
 }
 
-const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+
+// Optional hard override — set VITE_GEMINI_MODEL to pin a model and skip discovery.
+const MODEL_OVERRIDE = import.meta.env.VITE_GEMINI_MODEL || null;
+
+// Used only if discovery fails or the account exposes no usable model. The "-latest"
+// alias is chosen because Google guarantees it points to a currently-serving model —
+// a versioned id like gemini-2.5-flash can appear in ListModels yet still 404 on
+// generateContent for a given key.
+const FALLBACK_MODEL = 'gemini-flash-latest';
+
+// Preference order among the account's available models — first match wins. Flash-class
+// only: fastest and cheapest on quota, which suits once-a-day generation for two users.
+// The "-latest" aliases come first: they reliably serve generateContent, whereas pinned
+// versions (gemini-2.5-flash, gemini-2.0-flash) can be listed but 404 or 429 on call.
+const MODEL_PREFERENCES = [
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+];
+
+// Resolved model id is cached for the session. It is a plain model name
+// (e.g. "gemini-2.5-flash") — never the API key — so module-level caching is safe.
+let cachedModel = null;
+
+// Discover which models this key can actually use for generateContent, then pick the
+// best per MODEL_PREFERENCES → any flash model → any model → FALLBACK_MODEL. Discovery is
+// best-effort: on any failure it falls back so generation is never blocked by this step.
+export async function resolveModel(apiKey) {
+  if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
+  if (cachedModel) return cachedModel;
+
+  let names = [];
+  try {
+    const res = await fetch(`${API_BASE}/models?key=${apiKey}`);
+    if (res.ok) {
+      const data = await res.json();
+      names = (data.models || [])
+        .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map((m) => (m.name || '').replace(/^models\//, ''));
+    }
+  } catch {
+    // Network failure listing models — fall through to the fallback model.
+  }
+
+  // Skip non-text variants (image / tts / audio / vision / robotics / preview, etc.) so a
+  // generic fallback never lands on a model that can't return plain-text JSON.
+  const isTextFlash = (m) =>
+    m.includes('flash') &&
+    !/(image|tts|audio|vision|robotics|computer-use|omni|preview)/.test(m);
+
+  const available = new Set(names);
+  cachedModel =
+    MODEL_PREFERENCES.find((m) => available.has(m)) ||
+    names.find((m) => m.includes('flash') && m.includes('latest')) ||
+    names.find(isTextFlash) ||
+    names[0] ||
+    FALLBACK_MODEL;
+  return cachedModel;
+}
 
 const IMPORTANCE = ['high', 'medium', 'low'];
 
@@ -61,10 +120,12 @@ export function buildDailyPrompt(date, examType) {
 }
 
 // Call Gemini over HTTPS. apiKey is used only within this function scope.
+// The model is resolved from the account's available models (see resolveModel).
 export async function callGemini(apiKey, prompt) {
+  const model = await resolveModel(apiKey);
   let response;
   try {
-    response = await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`, {
+    response = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -78,6 +139,9 @@ export async function callGemini(apiKey, prompt) {
   }
 
   if (!response.ok) {
+    // A cached model that has since been retired returns 404 — drop it so the next
+    // attempt rediscovers a live model instead of failing forever.
+    if (response.status === 404) cachedModel = null;
     // Status only — never the response body (may echo the key or prompt).
     throw new GeminiCallError(`Gemini API error: ${response.status}`);
   }

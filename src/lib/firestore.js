@@ -107,9 +107,15 @@ export async function saveDailyAffairs(uid, date, examType, categories) {
 
 // Store the already-encrypted Gemini API key. This helper never encrypts and never
 // receives plaintext — encryption happens in the caller via crypto.encryptApiKey.
+// Uses setDoc with merge (upsert): updateDoc throws if the users/{uid} profile doc
+// does not yet exist, so an upsert guarantees the key saves regardless.
 export async function setGeminiApiKey(uid, encryptedKey) {
   try {
-    await updateDoc(doc(db, 'users', uid), { geminiApiKey: encryptedKey });
+    await setDoc(
+      doc(db, 'users', uid),
+      { geminiApiKey: encryptedKey },
+      { merge: true },
+    );
   } catch (err) {
     throw new FirestoreWriteError('Failed to save API key', err);
   }

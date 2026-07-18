@@ -1,9 +1,14 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui';
 import { StreakDisplay } from './StreakDisplay';
+import { Dedication } from './Dedication';
 import { InstallPrompt } from '../../features/pwa/InstallPrompt';
+
+// Taps on the "Vaishu" logo needed to reveal the hidden dedication.
+const REVEAL_TAPS = 3;
 
 // All primary navigation links (frontend.md / DESIGN_SYSTEM.md sidebar order).
 const NAV_LINKS = [
@@ -43,6 +48,21 @@ export function AppShell() {
   const { signOut } = useAuth();
   const navigate = useNavigate();
 
+  // Hidden dedication: counts taps on the logo, reveals the note on the REVEAL_TAPS-th tap.
+  const [taps, setTaps] = useState(0);
+  const [showDedication, setShowDedication] = useState(false);
+
+  function registerLogoTap() {
+    setTaps((prev) => {
+      const next = prev + 1;
+      if (next >= REVEAL_TAPS) {
+        setShowDedication(true);
+        return 0;
+      }
+      return next;
+    });
+  }
+
   async function handleSignOut() {
     await signOut();
     navigate('/login', { replace: true });
@@ -53,7 +73,14 @@ export function AppShell() {
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-52 border-r border-ink-300 bg-white fixed top-0 left-0 h-screen flex-col">
         <div className="px-3 py-4">
-          <span className="text-lg text-ink-950 font-semibold tracking-tight">Vaishu</span>
+          <button
+            type="button"
+            onClick={registerLogoTap}
+            className="text-lg text-ink-950 font-semibold tracking-tight focus:outline-none"
+            aria-label="Vaishu"
+          >
+            Vaishu
+          </button>
         </div>
 
         <nav className="flex-1 px-2 space-y-0.5 overflow-y-auto">
@@ -73,6 +100,11 @@ export function AppShell() {
           <Button variant="ghost" size="sm" onClick={handleSignOut} className="mt-1 w-full justify-start">
             Sign out
           </Button>
+          {/* Quiet dedication — name accented, everything else muted (two-tone, elegant). */}
+          <p className="mt-2 px-3 text-2xs text-ink-500">
+            Made with <span aria-hidden="true">♥</span> for{' '}
+            <span className="text-ink-950 font-medium">Vaishu</span>
+          </p>
         </div>
       </aside>
 
@@ -80,9 +112,14 @@ export function AppShell() {
       <div className="md:ml-52 min-h-screen bg-ink-50 pb-16 md:pb-0">
         {/* Header with streak display shell */}
         <header className="h-14 border-b border-ink-300 bg-white flex items-center justify-between px-6">
-          <span className="text-2xs text-ink-500 font-medium uppercase tracking-widest md:hidden">
+          <button
+            type="button"
+            onClick={registerLogoTap}
+            className="text-2xs text-ink-500 font-medium uppercase tracking-widest md:hidden focus:outline-none"
+            aria-label="Vaishu"
+          >
             Vaishu
-          </span>
+          </button>
           <StreakDisplay streak={streak} className="ml-auto" />
         </header>
 
@@ -100,6 +137,9 @@ export function AppShell() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Hidden dedication, revealed by tapping the logo REVEAL_TAPS times. */}
+      {showDedication && <Dedication onClose={() => setShowDedication(false)} />}
     </div>
   );
 }
