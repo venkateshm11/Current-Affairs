@@ -240,3 +240,104 @@ export async function saveTestResult(uid, result) {
     throw new FirestoreWriteError('Failed to save test result', err);
   }
 }
+
+// --- Phase 5: Dashboard, Archive, Search, Weekly Digest ---
+// Every helper is users/{uid}-scoped — path built from the uid argument only, never a
+// caller-supplied string, and never a collectionGroup/root query (no cross-user access).
+
+// List all of the user's test results, oldest first (chronological for the score-trend chart).
+export async function listTestResults(uid) {
+  try {
+    const q = query(
+      collection(db, 'users', uid, 'testResults'),
+      orderBy('takenAt', 'asc'),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    throw new FirestoreReadError('Failed to list test results', err);
+  }
+}
+
+// List the dates the user has archived daily-affairs content for. Light payload
+// ({ id, date, examType }) for the archive calendar — the full day is loaded on demand via
+// getDailyAffairs. Only days that actually exist for this user are returned.
+export async function listDailyAffairsDates(uid) {
+  try {
+    const snap = await getDocs(collection(db, 'users', uid, 'dailyAffairs'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, date: data.date, examType: data.examType };
+    });
+  } catch (err) {
+    throw new FirestoreReadError('Failed to list archive dates', err);
+  }
+}
+
+// Cross-day keyword search — CLIENT-SIDE ONLY. Loads all of THIS user's daily-affairs docs into
+// memory and filters in JS. The keyword is used solely for the in-memory match: it is never placed
+// in a Firestore query predicate, never sent to Gemini, never sent to any external service.
+export async function searchDailyAffairs(uid, keyword) {
+  const term = (keyword || '').trim().toLowerCase();
+  if (!term) return [];
+  try {
+    const snap = await getDocs(collection(db, 'users', uid, 'dailyAffairs'));
+    const matches = [];
+    for (const d of snap.docs) {
+      const data = d.data();
+      for (const category of data.categories || []) {
+        for (const item of category.items || []) {
+          const haystack = [item.title, item.detail, ...(item.tags || [])]
+            .join(' ')
+            .toLowerCase();
+          if (haystack.includes(term)) {
+            matches.push({
+              sourceDate: data.date,
+              examType: data.examType,
+              category: category.name,
+              item,
+            });
+          }
+        }
+      }
+    }
+    return matches;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to search daily affairs', err);
+  }
+}
+
+// Firestore document id for a weekly digest: "2025-W30_banking". Exact match only.
+function weeklyDigestDocId(week, examType) {
+  return `${week}_${examType}`;
+}
+
+// Cache read (cache-before-call): the weekly digest for week+examType, or null on a miss.
+export async function getWeeklyDigest(uid, week, examType) {
+  try {
+    const ref = doc(db, 'users', uid, 'weeklyDigests', weeklyDigestDocId(week, examType));
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to read weekly digest', err);
+  }
+}
+
+// Cache write: store the validated weekly digest (setDoc — one doc per week+examType, never
+// addDoc). Called only after validateWeeklyDigestResponse succeeds. generatedAt uses
+// serverTimestamp() — never new Date()/Date.now().
+export async function saveWeeklyDigest(uid, week, examType, digest) {
+  try {
+    const ref = doc(db, 'users', uid, 'weeklyDigests', weeklyDigestDocId(week, examType));
+    await setDoc(ref, {
+      week,
+      examType,
+      weekSummary: digest.weekSummary,
+      keyTopics: digest.keyTopics,
+      revisionPoints: digest.revisionPoints,
+      generatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save weekly digest', err);
+  }
+}

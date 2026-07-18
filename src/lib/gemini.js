@@ -200,3 +200,60 @@ export function validateDailyResponse(raw) {
 
   return raw;
 }
+
+// Build a deterministic, JSON-only prompt for a weekly digest. weekContent is the week's
+// already-fetched daily-affairs data (array of daily docs) passed AS A DATA ARGUMENT — this
+// function performs no Firestore read and no fetch, and never references the API key.
+export function buildWeeklyDigestPrompt(week, examType, weekContent) {
+  const label = EXAM_LABELS[examType] || EXAM_LABELS.all;
+  const lines = [];
+  for (const day of weekContent || []) {
+    for (const category of day.categories || []) {
+      for (const item of category.items || []) {
+        lines.push(`- (${day.date}) ${item.title}: ${item.detail}`);
+      }
+    }
+  }
+  const corpus = lines.join('\n') || '(no items)';
+  return [
+    `You are a revision editor for Indian competitive exam aspirants.`,
+    `Summarise the current affairs of ISO week ${week} relevant to ${label}.`,
+    `Base your summary ONLY on the items below:`,
+    ``,
+    corpus,
+    ``,
+    `Return ONLY valid JSON, no markdown fences and no prose, matching exactly this shape:`,
+    `{`,
+    `  "weekSummary": "one concise paragraph summarising the week",`,
+    `  "keyTopics": ["topic 1", "topic 2"],`,
+    `  "revisionPoints": ["point 1", "point 2"]`,
+    `}`,
+    ``,
+    `Rules: weekSummary is a non-empty string. keyTopics has at least 5 entries.`,
+    `revisionPoints has at least 10 entries. All array entries are strings. Output JSON only.`,
+  ].join('\n');
+}
+
+// Validate the weekly-digest response against the Phase 5 shape. Throws GeminiParseError on any
+// deviation; returns raw unchanged on success. No Firestore write happens if this throws.
+export function validateWeeklyDigestResponse(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new GeminiParseError('Response is not an object');
+  }
+  if (typeof raw.weekSummary !== 'string' || raw.weekSummary.trim().length === 0) {
+    throw new GeminiParseError('Missing weekSummary');
+  }
+  if (!Array.isArray(raw.keyTopics) || raw.keyTopics.length < 5) {
+    throw new GeminiParseError('keyTopics must have at least 5 items');
+  }
+  if (!raw.keyTopics.every((t) => typeof t === 'string')) {
+    throw new GeminiParseError('keyTopics must be strings');
+  }
+  if (!Array.isArray(raw.revisionPoints) || raw.revisionPoints.length < 10) {
+    throw new GeminiParseError('revisionPoints must have at least 10 items');
+  }
+  if (!raw.revisionPoints.every((p) => typeof p === 'string')) {
+    throw new GeminiParseError('revisionPoints must be strings');
+  }
+  return raw;
+}

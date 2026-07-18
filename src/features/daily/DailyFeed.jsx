@@ -9,6 +9,7 @@ import { GeminiParseError } from '../../lib/firestore';
 import { todayIST } from '../../utils/dates';
 import { DailyFeedCard } from './DailyFeedCard';
 import { ExamFilter } from './ExamFilter';
+import { WeeklyDigest } from './WeeklyDigest';
 
 const today = () => todayIST();
 
@@ -63,6 +64,8 @@ export function DailyFeed() {
       </div>
 
       <ExamFilter />
+
+      <WeeklyDigest examType={examType} />
 
       {renderBody()}
     </div>
