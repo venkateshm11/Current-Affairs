@@ -22,13 +22,14 @@ const NAV_LINKS = [
   { to: '/monthly', label: 'Monthly' },
 ];
 
-// Reduced set shown in the mobile bottom navigation.
+// Reduced set shown in the mobile bottom navigation. Each carries an icon so the
+// PWA bottom bar reads as icons (with a small label beneath) rather than text only.
 const MOBILE_LINKS = [
-  { to: '/', label: 'Daily', end: true },
-  { to: '/bookmarks', label: 'Bookmarks' },
-  { to: '/quiz', label: 'Quiz' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/settings', label: 'Settings' },
+  { to: '/', label: 'Daily', icon: '📰', end: true },
+  { to: '/bookmarks', label: 'Bookmarks', icon: '★' },
+  { to: '/quiz', label: 'Quiz', icon: '📝' },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 function sidebarLinkClass({ isActive }) {
@@ -39,8 +40,8 @@ function sidebarLinkClass({ isActive }) {
 
 function bottomLinkClass({ isActive }) {
   return isActive
-    ? 'flex flex-1 items-center justify-center text-2xs font-medium text-ink-950'
-    : 'flex flex-1 items-center justify-center text-2xs font-medium text-ink-500';
+    ? 'flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs font-medium text-ink-950'
+    : 'flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs font-medium text-ink-500';
 }
 
 export function AppShell() {
@@ -76,9 +77,10 @@ export function AppShell() {
           <button
             type="button"
             onClick={registerLogoTap}
-            className="text-lg text-ink-950 font-semibold tracking-tight focus:outline-none"
+            className="flex items-center gap-2 text-lg text-ink-950 font-semibold tracking-tight focus:outline-none"
             aria-label="Vaishu"
           >
+            <img src="/pwa-icon.svg" alt="" aria-hidden="true" className="h-6 w-6 rounded-md" />
             Vaishu
           </button>
         </div>
@@ -115,9 +117,10 @@ export function AppShell() {
           <button
             type="button"
             onClick={registerLogoTap}
-            className="text-2xs text-ink-500 font-medium uppercase tracking-widest md:hidden focus:outline-none"
+            className="flex items-center gap-2 text-2xs text-ink-500 font-medium uppercase tracking-widest md:hidden focus:outline-none"
             aria-label="Vaishu"
           >
+            <img src="/pwa-icon.svg" alt="" aria-hidden="true" className="h-5 w-5 rounded" />
             Vaishu
           </button>
           <StreakDisplay streak={streak} className="ml-auto" />
@@ -133,7 +136,10 @@ export function AppShell() {
       <nav className="md:hidden fixed bottom-0 inset-x-0 h-14 bg-white border-t border-ink-300 flex">
         {MOBILE_LINKS.map((link) => (
           <NavLink key={link.to} to={link.to} end={link.end} className={bottomLinkClass}>
-            {link.label}
+            <span aria-hidden="true" className="text-lg leading-none">
+              {link.icon}
+            </span>
+            <span>{link.label}</span>
           </NavLink>
         ))}
       </nav>

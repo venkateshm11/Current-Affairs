@@ -27,7 +27,9 @@ export function DailyFeedCard({ item, isBookmarked = false, onToggleBookmark }) 
             <span className="sr-only">
               {isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
             </span>
-            <span aria-hidden="true">{isBookmarked ? '★' : '☆'}</span>
+            <span aria-hidden="true" className="text-xl leading-none">
+              {isBookmarked ? '★' : '☆'}
+            </span>
           </Button>
         )}
       </div>
