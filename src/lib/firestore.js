@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 // Typed error classes — callers catch these and map to UI states.
@@ -55,5 +55,68 @@ export async function createUserDoc(uid) {
     await setDoc(doc(db, 'users', uid), defaultUserDoc());
   } catch (err) {
     throw new FirestoreWriteError('Failed to create user document', err);
+  }
+}
+
+// --- Phase 2: Daily affairs cache, API key, exam type, streak ---
+
+// Firestore document id for a cached day: "2025-07-17_banking". Exact match only.
+function dailyDocId(date, examType) {
+  return `${date}_${examType}`;
+}
+
+// Cache read: return the cached daily-affairs doc for date+examType, or null.
+// The path is built entirely from the uid argument — never a caller-supplied string.
+export async function getDailyAffairs(uid, date, examType) {
+  try {
+    const ref = doc(db, 'users', uid, 'dailyAffairs', dailyDocId(date, examType));
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to read daily affairs', err);
+  }
+}
+
+// Cache write: overwrite (setDoc, never addDoc) the day's doc with validated categories.
+// generatedAt uses serverTimestamp() — never new Date()/Date.now().
+export async function saveDailyAffairs(uid, date, examType, categories) {
+  try {
+    const ref = doc(db, 'users', uid, 'dailyAffairs', dailyDocId(date, examType));
+    await setDoc(ref, {
+      date,
+      examType,
+      categories,
+      generatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save daily affairs', err);
+  }
+}
+
+// Store the already-encrypted Gemini API key. This helper never encrypts and never
+// receives plaintext — encryption happens in the caller via crypto.encryptApiKey.
+export async function setGeminiApiKey(uid, encryptedKey) {
+  try {
+    await updateDoc(doc(db, 'users', uid), { geminiApiKey: encryptedKey });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save API key', err);
+  }
+}
+
+// Persist the user's default exam type.
+export async function updateDefaultExamType(uid, examType) {
+  try {
+    await updateDoc(doc(db, 'users', uid), { defaultExamType: examType });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to update exam type', err);
+  }
+}
+
+// Write all three streak fields (current, longest, lastDate) in a single atomic update.
+export async function updateStreak(uid, streak) {
+  try {
+    await updateDoc(doc(db, 'users', uid), { streak });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to update streak', err);
   }
 }
