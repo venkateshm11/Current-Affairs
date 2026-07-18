@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui';
+import { StreakDisplay } from './StreakDisplay';
 
 // All primary navigation links (frontend.md / DESIGN_SYSTEM.md sidebar order).
 const NAV_LINKS = [
@@ -67,9 +68,7 @@ export function AppShell() {
         </nav>
 
         <div className="px-3 py-2 border-t border-ink-200">
-          <div className="text-sm text-ink-500">
-            <span className="text-ink-950 font-medium">🔥 {streak.current}</span> day streak
-          </div>
+          <StreakDisplay streak={streak} className="block" />
           <Button variant="ghost" size="sm" onClick={handleSignOut} className="mt-1 w-full justify-start">
             Sign out
           </Button>
@@ -83,9 +82,7 @@ export function AppShell() {
           <span className="text-2xs text-ink-500 font-medium uppercase tracking-widest md:hidden">
             Vaishu
           </span>
-          <span className="text-sm text-ink-500 ml-auto">
-            <span className="text-ink-950 font-medium">🔥 {streak.current}</span> day streak
-          </span>
+          <StreakDisplay streak={streak} className="ml-auto" />
         </header>
 
         <main className="max-w-2xl mx-auto px-6 py-6">
