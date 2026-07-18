@@ -1,4 +1,16 @@
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+  collection,
+  addDoc,
+  deleteDoc,
+  getDocs,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 import { db } from './firebase';
 
 // Typed error classes — callers catch these and map to UI states.
@@ -118,5 +130,51 @@ export async function updateStreak(uid, streak) {
     await updateDoc(doc(db, 'users', uid), { streak });
   } catch (err) {
     throw new FirestoreWriteError('Failed to update streak', err);
+  }
+}
+
+// --- Phase 3: Bookmarks ---
+// Path is always users/{uid}/bookmarks — built from the uid argument only, never a
+// caller-supplied string. Already covered by the canonical {subcollection}/{docId} rule.
+
+// Save a bookmark (fields copied by value from the daily item). savedAt uses
+// serverTimestamp() — never new Date()/Date.now(). Returns the new document id.
+export async function addBookmark(uid, bookmark) {
+  try {
+    const ref = await addDoc(collection(db, 'users', uid, 'bookmarks'), {
+      title: bookmark.title,
+      detail: bookmark.detail,
+      sourceDate: bookmark.sourceDate,
+      examType: bookmark.examType,
+      tags: bookmark.tags ?? [],
+      importance: bookmark.importance,
+      savedAt: serverTimestamp(),
+    });
+    return ref.id;
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to add bookmark', err);
+  }
+}
+
+// Delete a single bookmark by its document id.
+export async function removeBookmark(uid, bookmarkId) {
+  try {
+    await deleteDoc(doc(db, 'users', uid, 'bookmarks', bookmarkId));
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to remove bookmark', err);
+  }
+}
+
+// List the user's bookmarks, newest first. Returns [{ id, ...data }].
+export async function listBookmarks(uid) {
+  try {
+    const q = query(
+      collection(db, 'users', uid, 'bookmarks'),
+      orderBy('savedAt', 'desc'),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    throw new FirestoreReadError('Failed to list bookmarks', err);
   }
 }

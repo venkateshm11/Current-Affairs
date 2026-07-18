@@ -12,3 +12,26 @@
     @apply bg-ink-50 text-ink-950 font-sans text-base;
   }
 }
+
+/* Flashcard 3D flip (DESIGN_SYSTEM.md) — pure CSS transform, no JS animation library.
+   Both faces stay in the DOM with backface-visibility hidden, so flipping never flashes
+   unstyled content. */
+.card-scene {
+  perspective: 1000px;
+}
+.card-inner {
+  transition: transform 0.35s ease;
+  transform-style: preserve-3d;
+}
+.card-inner.flipped {
+  transform: rotateY(180deg);
+}
+.card-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+.card-back {
+  transform: rotateY(180deg);
+}

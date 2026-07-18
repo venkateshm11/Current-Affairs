@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import { DailyFeedCard } from './DailyFeedCard';
 
 const item = {
@@ -31,5 +31,23 @@ describe('DailyFeedCard', () => {
 
     const low = render(<DailyFeedCard item={{ ...item, importance: 'low' }} />);
     expect(low.container.firstChild.className).toContain('border-stripe-low');
+  });
+
+  it('renders no bookmark button when onToggleBookmark is omitted', () => {
+    render(<DailyFeedCard item={item} />);
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('shows the "Add bookmark" affordance and toggles it on click', () => {
+    const onToggle = vi.fn();
+    render(<DailyFeedCard item={item} isBookmarked={false} onToggleBookmark={onToggle} />);
+    const button = screen.getByRole('button', { name: /add bookmark/i });
+    fireEvent.click(button);
+    expect(onToggle).toHaveBeenCalledWith(item);
+  });
+
+  it('shows the "Remove bookmark" affordance when already bookmarked', () => {
+    render(<DailyFeedCard item={item} isBookmarked onToggleBookmark={() => {}} />);
+    expect(screen.getByRole('button', { name: /remove bookmark/i })).toBeInTheDocument();
   });
 });

@@ -3,6 +3,7 @@ import { Button, EmptyState, ErrorMessage, Spinner } from '../../components/ui';
 import { useApp } from '../../context/AppContext';
 import { useDailyAffairs, MissingApiKeyError } from '../../hooks/useDailyAffairs';
 import { useStreak } from '../../hooks/useStreak';
+import { useBookmarks } from '../../hooks/useBookmarks';
 import { GeminiCallError } from '../../lib/gemini';
 import { GeminiParseError } from '../../lib/firestore';
 import { todayIST } from '../../utils/dates';
@@ -29,6 +30,30 @@ export function DailyFeed() {
   const { data, loading, generating, error, generate } = useDailyAffairs(date, examType, {
     onGenerated: recordGeneration,
   });
+  const { bookmarks, add, remove } = useBookmarks();
+
+  // Lookup for the current day's bookmarks, keyed by title, so each card knows its state.
+  const bookmarkByTitle = new Map(
+    bookmarks
+      .filter((b) => b.sourceDate === date)
+      .map((b) => [b.title, b]),
+  );
+
+  function toggleBookmark(item) {
+    const existing = bookmarkByTitle.get(item.title);
+    if (existing) {
+      remove(existing.id);
+    } else {
+      add({
+        title: item.title,
+        detail: item.detail,
+        tags: item.tags ?? [],
+        importance: item.importance,
+        sourceDate: date,
+        examType,
+      });
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -81,7 +106,12 @@ export function DailyFeed() {
               </p>
               <div className="space-y-2">
                 {category.items.map((item, index) => (
-                  <DailyFeedCard key={`${item.title}-${index}`} item={item} />
+                  <DailyFeedCard
+                    key={`${item.title}-${index}`}
+                    item={item}
+                    isBookmarked={bookmarkByTitle.has(item.title)}
+                    onToggleBookmark={toggleBookmark}
+                  />
                 ))}
               </div>
             </section>
