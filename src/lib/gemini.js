@@ -95,6 +95,72 @@ export async function callGemini(apiKey, prompt) {
   }
 }
 
+// Build a deterministic, JSON-only prompt for a pool of MCQs for a day + exam type.
+// One pool of up to 50 questions is generated and cached per date+examType; every quiz
+// mode slices the first N (casual 10, timed 10/20/30, exam 50) — Gemini is never called
+// twice for the same date+examType (ADR-006, golden-rule #4).
+export function buildMcqPrompt(date, examType) {
+  const label = EXAM_LABELS[examType] || EXAM_LABELS.all;
+  return [
+    `You are a quiz setter for Indian competitive exam aspirants.`,
+    `Create 50 multiple-choice current-affairs questions for ${date} relevant to ${label}.`,
+    ``,
+    `Return ONLY valid JSON, no markdown fences and no prose, matching exactly this shape:`,
+    `{`,
+    `  "questions": [`,
+    `    {`,
+    `      "question": "short question text",`,
+    `      "options": ["option A", "option B", "option C", "option D"],`,
+    `      "correctIndex": 0,`,
+    `      "explanation": "1-2 sentence explanation, at most 300 characters",`,
+    `      "category": "Economy & Finance"`,
+    `    }`,
+    `  ]`,
+    `}`,
+    ``,
+    `Rules: each question has exactly 4 options. correctIndex is an integer 0-3 indexing`,
+    `the options array. Group questions across 4-6 sensible categories. Output JSON only.`,
+  ].join('\n');
+}
+
+// Validate the MCQ response against the canonical schema (schema.md).
+// Throws GeminiParseError on any deviation. Returns the validated object unchanged.
+export function validateMcqResponse(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new GeminiParseError('Response is not an object');
+  }
+  if (!Array.isArray(raw.questions) || raw.questions.length === 0) {
+    throw new GeminiParseError('Missing questions array');
+  }
+
+  for (const q of raw.questions) {
+    if (!q || typeof q !== 'object') {
+      throw new GeminiParseError('Invalid question');
+    }
+    if (typeof q.question !== 'string' || typeof q.explanation !== 'string') {
+      throw new GeminiParseError('Question missing question or explanation');
+    }
+    if (typeof q.category !== 'string') {
+      throw new GeminiParseError('Question missing category');
+    }
+    if (!Array.isArray(q.options) || q.options.length !== 4) {
+      throw new GeminiParseError('Question must have exactly 4 options');
+    }
+    if (!q.options.every((o) => typeof o === 'string')) {
+      throw new GeminiParseError('Options must be strings');
+    }
+    if (
+      !Number.isInteger(q.correctIndex) ||
+      q.correctIndex < 0 ||
+      q.correctIndex > 3
+    ) {
+      throw new GeminiParseError('correctIndex out of range');
+    }
+  }
+
+  return raw;
+}
+
 // Validate the daily-affairs response against the canonical schema (schema.md).
 // Throws GeminiParseError on any deviation. Returns the validated object unchanged.
 export function validateDailyResponse(raw) {

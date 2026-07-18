@@ -178,3 +178,65 @@ export async function listBookmarks(uid) {
     throw new FirestoreReadError('Failed to list bookmarks', err);
   }
 }
+
+// --- Phase 4: MCQ cache + test results ---
+// Path is always users/{uid}/... built from the uid argument only, never a caller string.
+
+// Firestore document id for a cached MCQ pool: "2025-07-17_banking". Exact match only.
+function mcqDocId(date, examType) {
+  return `${date}_${examType}`;
+}
+
+// Cache read: return the cached MCQ pool for date+examType, or null on a miss.
+// Checked BEFORE any Gemini MCQ call (golden-rule #4) — the caller never skips this.
+export async function getMcqCache(uid, date, examType) {
+  try {
+    const ref = doc(db, 'users', uid, 'mcqCache', mcqDocId(date, examType));
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to read MCQ cache', err);
+  }
+}
+
+// Cache write: store the validated MCQ pool for the day (setDoc — one cache doc per
+// date+examType, never addDoc). Only called after validateMcqResponse succeeds.
+// generatedAt uses serverTimestamp() — never new Date()/Date.now().
+export async function saveMcqCache(uid, date, examType, questions) {
+  try {
+    const ref = doc(db, 'users', uid, 'mcqCache', mcqDocId(date, examType));
+    await setDoc(ref, {
+      date,
+      examType,
+      questions,
+      generatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save MCQ cache', err);
+  }
+}
+
+// Save a completed test result. addDoc (never setDoc) — each result is a new document
+// and never overwrites a prior one. All fields are computed client-side and passed in;
+// takenAt uses serverTimestamp() — never new Date()/Date.now(). Returns the new id.
+export async function saveTestResult(uid, result) {
+  try {
+    const ref = await addDoc(collection(db, 'users', uid, 'testResults'), {
+      date: result.date,
+      examType: result.examType,
+      mode: result.mode,
+      score: result.score,
+      totalQ: result.totalQ,
+      correct: result.correct,
+      wrong: result.wrong,
+      skipped: result.skipped,
+      timeTaken: result.timeTaken,
+      negativeMarkingEnabled: result.negativeMarkingEnabled,
+      categoryBreakdown: result.categoryBreakdown,
+      takenAt: serverTimestamp(),
+    });
+    return ref.id;
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save test result', err);
+  }
+}

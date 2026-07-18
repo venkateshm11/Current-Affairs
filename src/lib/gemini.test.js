@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildDailyPrompt, validateDailyResponse } from './gemini';
+import {
+  buildDailyPrompt,
+  validateDailyResponse,
+  buildMcqPrompt,
+  validateMcqResponse,
+} from './gemini';
 import { GeminiParseError } from './firestore';
 
 const validResponse = {
@@ -62,5 +67,85 @@ describe('validateDailyResponse', () => {
       ],
     };
     expect(() => validateDailyResponse(bad)).toThrow(GeminiParseError);
+  });
+});
+
+const validMcq = {
+  questions: [
+    {
+      question: 'Who is the current RBI Governor?',
+      options: ['Shaktikanta Das', 'Urjit Patel', 'Raghuram Rajan', 'D. Subbarao'],
+      correctIndex: 0,
+      explanation: 'Shaktikanta Das has served as RBI Governor.',
+      category: 'Economy & Finance',
+    },
+  ],
+};
+
+describe('buildMcqPrompt', () => {
+  it('includes the date and asks for JSON only', () => {
+    const prompt = buildMcqPrompt('2025-07-18', 'banking');
+    expect(prompt).toContain('2025-07-18');
+    expect(prompt).toContain('Banking');
+    expect(prompt.toLowerCase()).toContain('json only');
+  });
+});
+
+describe('validateMcqResponse', () => {
+  it('returns the object unchanged for a valid response', () => {
+    expect(validateMcqResponse(validMcq)).toBe(validMcq);
+  });
+
+  it('throws GeminiParseError when questions array is missing', () => {
+    expect(() => validateMcqResponse({ foo: 'bar' })).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when questions is empty', () => {
+    expect(() => validateMcqResponse({ questions: [] })).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when options length is not 4', () => {
+    const bad = {
+      questions: [
+        { question: 'q', options: ['a', 'b', 'c'], correctIndex: 0, explanation: 'e', category: 'c' },
+      ],
+    };
+    expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when correctIndex is out of range', () => {
+    const bad = {
+      questions: [
+        { question: 'q', options: ['a', 'b', 'c', 'd'], correctIndex: 4, explanation: 'e', category: 'c' },
+      ],
+    };
+    expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when correctIndex is not an integer', () => {
+    const bad = {
+      questions: [
+        { question: 'q', options: ['a', 'b', 'c', 'd'], correctIndex: 1.5, explanation: 'e', category: 'c' },
+      ],
+    };
+    expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when a question is missing its category', () => {
+    const bad = {
+      questions: [
+        { question: 'q', options: ['a', 'b', 'c', 'd'], correctIndex: 0, explanation: 'e' },
+      ],
+    };
+    expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
+  });
+
+  it('throws GeminiParseError when an option is not a string', () => {
+    const bad = {
+      questions: [
+        { question: 'q', options: ['a', 'b', 'c', 5], correctIndex: 0, explanation: 'e', category: 'c' },
+      ],
+    };
+    expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
   });
 });

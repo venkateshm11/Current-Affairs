@@ -5,3 +5,4 @@ export { ErrorMessage } from './ErrorMessage';
 export { Tabs } from './Tabs';
 export { EmptyState } from './EmptyState';
 export { Input } from './Input';
+export { ProgressBar } from './ProgressBar';
