@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "firebase": "11.10.0",
+    "html2canvas": "^1.4.1",
+    "html2pdf.js": "^0.10.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.4",
@@ -26,6 +28,7 @@
     "postcss": "^8.5.19",
     "tailwindcss": "^3.4.19",
     "vite": "^6.4.3",
+    "vite-plugin-pwa": "^0.21.2",
     "vitest": "^2.1.9"
   }
 }

@@ -341,3 +341,53 @@ export async function saveWeeklyDigest(uid, week, examType, digest) {
     throw new FirestoreWriteError('Failed to save weekly digest', err);
   }
 }
+
+// --- Phase 6: Monthly overview cache + FCM token ---
+// Every helper is users/{uid}-scoped — path built from the uid argument only, never a
+// caller-supplied string. Covered by the canonical {subcollection}/{docId} + users/{uid} rules.
+
+// Firestore document id for a monthly overview: "2025-07_banking". Exact match only.
+function monthlyDocId(month, examType) {
+  return `${month}_${examType}`;
+}
+
+// Cache read (cache-before-call): the monthly overview for month+examType, or null on a miss.
+export async function getMonthlyOverview(uid, month, examType) {
+  try {
+    const ref = doc(db, 'users', uid, 'monthlyOverview', monthlyDocId(month, examType));
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to read monthly overview', err);
+  }
+}
+
+// Cache write: store the validated monthly overview (setDoc — one doc per month+examType, never
+// addDoc). Called only after validateMonthlyResponse succeeds. generatedAt uses
+// serverTimestamp() — never new Date()/Date.now().
+export async function saveMonthlyOverview(uid, month, examType, overview) {
+  try {
+    const ref = doc(db, 'users', uid, 'monthlyOverview', monthlyDocId(month, examType));
+    await setDoc(ref, {
+      month,
+      examType,
+      keyTopics: overview.keyTopics,
+      revisionPoints: overview.revisionPoints,
+      categorySummaries: overview.categorySummaries,
+      totalDays: overview.totalDays,
+      generatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save monthly overview', err);
+  }
+}
+
+// Store the user's FCM web-push registration token on their profile doc (uid-scoped).
+// The token is not PII and is only ever written under the caller's own uid.
+export async function setFcmToken(uid, token) {
+  try {
+    await updateDoc(doc(db, 'users', uid), { fcmToken: token });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save notification token', err);
+  }
+}

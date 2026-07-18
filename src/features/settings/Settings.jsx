@@ -3,6 +3,48 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserDoc, setGeminiApiKey } from '../../lib/firestore';
 import { encryptApiKey } from '../../lib/crypto';
 import { Button, Card, ErrorMessage, Input, Spinner } from '../../components/ui';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
+
+// Push-notification opt-in. Permission is requested only when the user clicks Enable.
+function PushNotificationsCard() {
+  const { supported, permission, enabling, enabled, error, enablePush } =
+    usePushNotifications();
+
+  return (
+    <Card>
+      <p className="text-2xs text-ink-500 font-medium uppercase tracking-widest">
+        Push notifications
+      </p>
+
+      {!supported ? (
+        <p className="text-sm text-ink-500 mt-2">
+          Notifications are not supported in this browser.
+        </p>
+      ) : permission === 'denied' ? (
+        <p className="text-sm text-ink-500 mt-2">
+          Notifications are blocked. Enable them in your browser settings to get a daily reminder.
+        </p>
+      ) : enabled || permission === 'granted' ? (
+        <p className="text-sm text-ink-500 mt-2">
+          Notifications are on. You&apos;ll get a daily reminder if today&apos;s affairs
+          aren&apos;t generated yet.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-3">
+          <p className="text-sm text-ink-500">
+            Get a daily reminder when today&apos;s current affairs aren&apos;t generated yet.
+          </p>
+          {error && (
+            <ErrorMessage message="Could not enable notifications. Please try again." />
+          )}
+          <Button onClick={enablePush} loading={enabling}>
+            Enable notifications
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 // API key setup. The plaintext key exists only in local component state during entry,
 // is encrypted before the Firestore write, and is cleared from state immediately after.
@@ -100,6 +142,8 @@ export function Settings() {
           </>
         )}
       </Card>
+
+      <PushNotificationsCard />
     </div>
   );
 }

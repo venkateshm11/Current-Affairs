@@ -257,3 +257,78 @@ export function validateWeeklyDigestResponse(raw) {
   }
   return raw;
 }
+
+// Build a deterministic, JSON-only prompt for a monthly overview. monthContent is the month's
+// already-fetched daily-affairs data (array of daily docs) passed AS A DATA ARGUMENT — this
+// function performs no Firestore read and no fetch, and never references the API key.
+export function buildMonthlyPrompt(month, examType, monthContent) {
+  const label = EXAM_LABELS[examType] || EXAM_LABELS.all;
+  const lines = [];
+  for (const day of monthContent || []) {
+    for (const category of day.categories || []) {
+      for (const item of category.items || []) {
+        lines.push(`- (${day.date}) [${category.name}] ${item.title}: ${item.detail}`);
+      }
+    }
+  }
+  const corpus = lines.join('\n') || '(no items)';
+  return [
+    `You are a revision editor for Indian competitive exam aspirants.`,
+    `Produce a full monthly revision overview for ${month} relevant to ${label}.`,
+    `Base your overview ONLY on the items below:`,
+    ``,
+    corpus,
+    ``,
+    `Return ONLY valid JSON, no markdown fences and no prose, matching exactly this shape:`,
+    `{`,
+    `  "keyTopics": ["topic 1", "topic 2"],`,
+    `  "revisionPoints": ["point 1", "point 2"],`,
+    `  "categorySummaries": { "Economy & Finance": "one paragraph summary" },`,
+    `  "totalDays": 30`,
+    `}`,
+    ``,
+    `Rules: keyTopics has between 10 and 30 entries. revisionPoints has at least 50 entries.`,
+    `categorySummaries has one paragraph string per category covered. totalDays is the number of`,
+    `distinct days summarised. All array entries are strings. Output JSON only.`,
+  ].join('\n');
+}
+
+// Validate the monthly-overview response against the canonical schema (schema.md).
+// Throws GeminiParseError on any deviation; returns raw unchanged on success. No Firestore write
+// happens if this throws (the caller order guarantees it).
+export function validateMonthlyResponse(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new GeminiParseError('Response is not an object');
+  }
+  if (
+    !Array.isArray(raw.keyTopics) ||
+    raw.keyTopics.length < 10 ||
+    raw.keyTopics.length > 30
+  ) {
+    throw new GeminiParseError('keyTopics must have between 10 and 30 items');
+  }
+  if (!raw.keyTopics.every((t) => typeof t === 'string')) {
+    throw new GeminiParseError('keyTopics must be strings');
+  }
+  if (!Array.isArray(raw.revisionPoints) || raw.revisionPoints.length < 50) {
+    throw new GeminiParseError('revisionPoints must have at least 50 items');
+  }
+  if (!raw.revisionPoints.every((p) => typeof p === 'string')) {
+    throw new GeminiParseError('revisionPoints must be strings');
+  }
+  if (
+    !raw.categorySummaries ||
+    typeof raw.categorySummaries !== 'object' ||
+    Array.isArray(raw.categorySummaries)
+  ) {
+    throw new GeminiParseError('categorySummaries must be an object');
+  }
+  const summaries = Object.values(raw.categorySummaries);
+  if (summaries.length === 0 || !summaries.every((s) => typeof s === 'string')) {
+    throw new GeminiParseError('categorySummaries values must be non-empty strings');
+  }
+  if (!Number.isInteger(raw.totalDays) || raw.totalDays < 0) {
+    throw new GeminiParseError('totalDays must be a non-negative integer');
+  }
+  return raw;
+}

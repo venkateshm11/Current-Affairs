@@ -51,3 +51,22 @@ export function weekDatesIST(dateStr = todayIST()) {
   }
   return out;
 }
+
+// Calendar month string "YYYY-MM" for the given IST date (first 7 chars). Pure.
+export function isoMonthIST(dateStr = todayIST()) {
+  return dateStr.slice(0, 7);
+}
+
+// Every "YYYY-MM-DD" date string of the given calendar month "YYYY-MM".
+// UTC calendar math — never locale-dependent. Pure. Used by useMonthlyOverview to gather
+// the month's daily-affairs docs.
+export function monthDatesIST(month = isoMonthIST()) {
+  const [y, m] = month.split('-').map(Number);
+  const out = [];
+  const cursor = new Date(Date.UTC(y, m - 1, 1));
+  while (cursor.getUTCMonth() === m - 1) {
+    out.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return out;
+}

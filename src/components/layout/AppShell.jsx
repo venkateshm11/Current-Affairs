@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui';
 import { StreakDisplay } from './StreakDisplay';
+import { InstallPrompt } from '../../features/pwa/InstallPrompt';
 
 // All primary navigation links (frontend.md / DESIGN_SYSTEM.md sidebar order).
 const NAV_LINKS = [
@@ -86,6 +87,7 @@ export function AppShell() {
         </header>
 
         <main className="max-w-2xl mx-auto px-6 py-6">
+          <InstallPrompt />
           <Outlet />
         </main>
       </div>
