@@ -397,3 +397,45 @@ export async function setFcmToken(uid, token) {
     throw new FirestoreWriteError('Failed to save notification token', err);
   }
 }
+
+// --- Phase 7: Shared daily content pool ---
+// Root-level sharedDaily/{date}_{examType} — NOT under users/{uid}. It holds ONLY
+// non-user-identifying content (date, examType, categories, generatedAt). No uid, email,
+// displayName, or any user field is ever written here. Neither helper takes a uid: the doc
+// id is built from date+examType inside the helper (never a caller-supplied path string),
+// so there is no cross-user path to inject. Firestore rules make these docs read-for-any-
+// authenticated-user and create-only (immutable — no update, no delete).
+
+// Firestore document id for the shared pool: "2025-07-19_banking". Exact match only.
+function sharedDailyDocId(date, examType) {
+  return `${date}_${examType}`;
+}
+
+// Public read (no uid): the shared pool doc for date+examType, or null on a miss.
+export async function getSharedDaily(date, examType) {
+  try {
+    const ref = doc(db, 'sharedDaily', sharedDailyDocId(date, examType));
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (err) {
+    throw new FirestoreReadError('Failed to read shared daily', err);
+  }
+}
+
+// Seed the shared pool (setDoc) with content-only fields. Called by the hook ONLY when
+// getSharedDaily returned null (we are the first to generate today) and ONLY after
+// validateDailyResponse has passed. The create-only rule blocks any overwrite regardless.
+// generatedAt uses serverTimestamp() — never new Date()/Date.now().
+export async function saveSharedDaily(date, examType, categories) {
+  try {
+    const ref = doc(db, 'sharedDaily', sharedDailyDocId(date, examType));
+    await setDoc(ref, {
+      date,
+      examType,
+      categories,
+      generatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    throw new FirestoreWriteError('Failed to save shared daily', err);
+  }
+}

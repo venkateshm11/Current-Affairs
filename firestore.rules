@@ -15,6 +15,15 @@ service cloud.firestore {
       }
     }
 
+    // Shared daily content pool (Phase 7). Non-user-identifying content only —
+    // no uid/email/displayName is ever written here. Any authenticated user may read
+    // the pool and create a day's doc, but docs are immutable once written.
+    match /sharedDaily/{docId} {
+      allow read:   if request.auth != null;   // authenticated reads only — no public access
+      allow create: if request.auth != null;   // create fires only when the doc does not yet exist
+      allow update, delete: if false;           // immutable — no overwrites, no deletes
+    }
+
     // Deny all other paths
     match /{document=**} {
       allow read, write: if false;

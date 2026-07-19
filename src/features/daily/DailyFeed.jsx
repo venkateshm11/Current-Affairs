@@ -28,7 +28,7 @@ export function DailyFeed() {
   const { examType } = useApp();
   const { recordGeneration } = useStreak();
   const date = today();
-  const { data, loading, generating, error, generate } = useDailyAffairs(date, examType, {
+  const { data, loading, generating, error, generate, source } = useDailyAffairs(date, examType, {
     onGenerated: recordGeneration,
   });
   const { bookmarks, add, remove } = useBookmarks();
@@ -64,6 +64,12 @@ export function DailyFeed() {
       </div>
 
       <ExamFilter />
+
+      {source === 'community' && (
+        <p className="text-xs text-ink-500">
+          ↓ Loaded from community pool — no API call used
+        </p>
+      )}
 
       <WeeklyDigest examType={examType} />
 
