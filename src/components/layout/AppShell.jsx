@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui';
@@ -22,13 +22,25 @@ const NAV_LINKS = [
   { to: '/monthly', label: 'Monthly' },
 ];
 
-// Reduced set shown in the mobile bottom navigation. Each carries an icon so the
-// PWA bottom bar reads as icons (with a small label beneath) rather than text only.
+// Primary set shown directly in the mobile bottom navigation. Each carries an icon
+// so the PWA bottom bar reads as icons (with a small label beneath) rather than text
+// only. The 5th slot is a "More" button that opens the sheet below — this keeps the
+// bar to five comfortable taps while making every feature reachable in the PWA.
 const MOBILE_LINKS = [
   { to: '/', label: 'Daily', icon: '📰', end: true },
   { to: '/bookmarks', label: 'Bookmarks', icon: '★' },
   { to: '/quiz', label: 'Quiz', icon: '📝' },
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+];
+
+// Overflow links surfaced through the mobile "More" sheet so the PWA reaches full
+// feature parity with the desktop sidebar (Flashcards, Archive, Search, Monthly,
+// Settings — the items that do not fit in the bottom bar).
+const MORE_LINKS = [
+  { to: '/flashcards', label: 'Flashcards', icon: '🃏' },
+  { to: '/archive', label: 'Archive', icon: '🗄️' },
+  { to: '/search', label: 'Search', icon: '🔍' },
+  { to: '/monthly', label: 'Monthly', icon: '📅' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -48,10 +60,17 @@ export function AppShell() {
   const { streak } = useApp();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Hidden dedication: counts taps on the logo, reveals the note on the REVEAL_TAPS-th tap.
   const [taps, setTaps] = useState(0);
   const [showDedication, setShowDedication] = useState(false);
+
+  // Mobile "More" sheet: exposes the overflow links that don't fit in the bottom bar.
+  const [showMore, setShowMore] = useState(false);
+
+  // Highlight the "More" button whenever the active route lives inside the sheet.
+  const moreActive = MORE_LINKS.some((link) => location.pathname === link.to);
 
   function registerLogoTap() {
     setTaps((prev) => {
@@ -142,7 +161,68 @@ export function AppShell() {
             <span>{link.label}</span>
           </NavLink>
         ))}
+        {/* "More" opens the overflow sheet so every feature is reachable in the PWA. */}
+        <button
+          type="button"
+          onClick={() => setShowMore(true)}
+          aria-haspopup="dialog"
+          aria-expanded={showMore}
+          className={
+            moreActive
+              ? 'flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs font-medium text-ink-950 focus:outline-none'
+              : 'flex flex-1 flex-col items-center justify-center gap-0.5 text-2xs font-medium text-ink-500 focus:outline-none'
+          }
+        >
+          <span aria-hidden="true" className="text-lg leading-none">
+            ⋯
+          </span>
+          <span>More</span>
+        </button>
       </nav>
+
+      {/* Mobile "More" sheet — overflow navigation for full PWA feature parity. */}
+      {showMore && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end"
+          onClick={() => setShowMore(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="More"
+        >
+          <div
+            className="w-full bg-white rounded-t-md shadow-modal p-4 pb-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="px-1 pb-3 text-2xs text-ink-500 uppercase tracking-widest">More</p>
+            <div className="grid grid-cols-4 gap-2">
+              {MORE_LINKS.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => setShowMore(false)}
+                  className={({ isActive }) =>
+                    isActive
+                      ? 'flex flex-col items-center justify-center gap-1 rounded py-3 text-2xs font-medium text-ink-950 bg-ink-100'
+                      : 'flex flex-col items-center justify-center gap-1 rounded py-3 text-2xs font-medium text-ink-500 hover:bg-ink-100 transition-colors'
+                  }
+                >
+                  <span aria-hidden="true" className="text-xl leading-none">
+                    {link.icon}
+                  </span>
+                  <span>{link.label}</span>
+                </NavLink>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMore(false)}
+              className="mt-4 w-full text-2xs text-ink-500 uppercase tracking-widest hover:text-ink-950 transition-colors focus:outline-none"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hidden dedication, revealed by tapping the logo REVEAL_TAPS times. */}
       {showDedication && <Dedication onClose={() => setShowDedication(false)} />}

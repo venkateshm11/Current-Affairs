@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserDoc, setGeminiApiKey } from '../../lib/firestore';
 import { encryptApiKey } from '../../lib/crypto';
+import { validateApiKey, geminiErrorMessage } from '../../lib/gemini';
 import { Button, Card, ErrorMessage, Input, Spinner } from '../../components/ui';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
 
@@ -88,6 +89,16 @@ export function Settings() {
 
     setSaving(true);
     try {
+      // Verify the key actually works with Gemini before storing it. A key that "saves"
+      // but can't call Gemini is the main source of the "AI service unavailable" confusion,
+      // so we reject a definitively bad key here instead of failing later at generation.
+      // A network-inconclusive result still saves (offline tolerance).
+      const check = await validateApiKey(plainKey);
+      if (!check.ok && !check.network) {
+        setError(geminiErrorMessage({ status: check.status }));
+        return;
+      }
+
       const encrypted = await encryptApiKey(plainKey, user.uid);
       await setGeminiApiKey(user.uid, encrypted);
       setKeyInput(''); // discard plaintext from state immediately after the write
@@ -119,6 +130,18 @@ export function Settings() {
               {hasKey
                 ? 'A key is set. Enter a new key below to replace it.'
                 : 'Enter your Gemini API key to generate daily current affairs. It is encrypted before it is stored.'}
+            </p>
+            <p className="text-2xs text-ink-500 mt-1">
+              Use a free key from{' '}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline text-ink-950"
+              >
+                Google AI Studio
+              </a>
+              . Only Google Gemini keys work here — keys from other providers won&apos;t.
             </p>
 
             <div className="mt-3 space-y-3">

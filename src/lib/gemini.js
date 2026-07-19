@@ -7,11 +7,35 @@
 import { GeminiParseError } from './firestore';
 
 // HTTP / network failure talking to Gemini. Distinct from GeminiParseError (bad shape).
+// `status` is the HTTP status (null for network-level failures) — used to show a specific,
+// actionable message. Only the status is kept, never the response body (may echo key/prompt).
 export class GeminiCallError extends Error {
-  constructor(message, cause) {
+  constructor(message, { status = null, cause = null } = {}) {
     super(message);
     this.name = 'GeminiCallError';
+    this.status = status;
     this.cause = cause;
+  }
+}
+
+// Map a Gemini failure to a specific, actionable message. Uses the HTTP status only —
+// never the response body — so no API key or prompt text can leak into the UI.
+export function geminiErrorMessage(error) {
+  switch (error?.status ?? null) {
+    case 400:
+      return 'That API key looks invalid. Copy a fresh key from Google AI Studio (aistudio.google.com/apikey) and try again.';
+    case 401:
+    case 403:
+      return 'That API key was rejected. Use a Google AI Studio (Gemini) key with the Generative Language API enabled and no key restrictions.';
+    case 404:
+      return 'None of the Gemini models available on this key could be reached. Try again, or use a different key.';
+    case 429:
+      return 'This key has hit its Gemini quota. Wait a while, or use a key with billing enabled.';
+    case 500:
+    case 503:
+      return 'Gemini is temporarily unavailable. Please try again in a moment.';
+    default:
+      return 'AI service unavailable. Check your API key or try again.';
   }
 }
 
@@ -37,16 +61,29 @@ const MODEL_PREFERENCES = [
   'gemini-2.5-flash',
 ];
 
-// Resolved model id is cached for the session. It is a plain model name
-// (e.g. "gemini-2.5-flash") — never the API key — so module-level caching is safe.
+// Last model that successfully served generateContent this session. A plain model name
+// (e.g. "gemini-2.5-flash") — never the API key — so module-level caching is safe. It is
+// tried first on the next call, and cleared whenever it stops working so discovery reruns.
 let cachedModel = null;
 
-// Discover which models this key can actually use for generateContent, then pick the
-// best per MODEL_PREFERENCES → any flash model → any model → FALLBACK_MODEL. Discovery is
-// best-effort: on any failure it falls back so generation is never blocked by this step.
-export async function resolveModel(apiKey) {
-  if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
-  if (cachedModel) return cachedModel;
+// Reset the remembered model — exposed for tests and for callers that switch keys.
+export function resetModelCache() {
+  cachedModel = null;
+}
+
+// Skip non-text variants (image / tts / audio / vision / robotics / preview, etc.) so a
+// generic fallback never lands on a model that can't return plain-text JSON.
+const isTextFlash = (m) =>
+  m.includes('flash') &&
+  !/(image|tts|audio|vision|robotics|computer-use|omni|preview)/.test(m);
+
+// Discover every model this key can use for generateContent and return them ranked best
+// first: preferred -latest aliases → any latest flash → any text flash → anything else the
+// account exposes → FALLBACK_MODEL as a last resort. callGemini walks this list in order so
+// a single unavailable/retired model never fails generation while another model still works.
+// Discovery is best-effort: on any failure it falls back to sensible defaults.
+export async function resolveModelCandidates(apiKey) {
+  if (MODEL_OVERRIDE) return [MODEL_OVERRIDE];
 
   let names = [];
   try {
@@ -58,23 +95,28 @@ export async function resolveModel(apiKey) {
         .map((m) => (m.name || '').replace(/^models\//, ''));
     }
   } catch {
-    // Network failure listing models — fall through to the fallback model.
+    // Network failure listing models — fall through to the defaults below.
   }
 
-  // Skip non-text variants (image / tts / audio / vision / robotics / preview, etc.) so a
-  // generic fallback never lands on a model that can't return plain-text JSON.
-  const isTextFlash = (m) =>
-    m.includes('flash') &&
-    !/(image|tts|audio|vision|robotics|computer-use|omni|preview)/.test(m);
-
   const available = new Set(names);
-  cachedModel =
-    MODEL_PREFERENCES.find((m) => available.has(m)) ||
-    names.find((m) => m.includes('flash') && m.includes('latest')) ||
-    names.find(isTextFlash) ||
-    names[0] ||
-    FALLBACK_MODEL;
-  return cachedModel;
+  const ranked = [
+    ...MODEL_PREFERENCES.filter((m) => available.has(m)), // preferred, in order
+    ...names.filter((m) => m.includes('flash') && m.includes('latest')), // any latest flash
+    ...names.filter(isTextFlash), // any other text flash
+    ...names, // anything else the account can generate with
+    FALLBACK_MODEL, // last resort if discovery returned nothing usable
+  ];
+
+  // De-duplicate while preserving order.
+  const seen = new Set();
+  const candidates = [];
+  for (const m of ranked) {
+    if (m && !seen.has(m)) {
+      seen.add(m);
+      candidates.push(m);
+    }
+  }
+  return candidates;
 }
 
 const IMPORTANCE = ['high', 'medium', 'low'];
@@ -119,44 +161,87 @@ export function buildDailyPrompt(date, examType) {
   ].join('\n');
 }
 
+// Statuses that are key-wide, not model-specific: trying another model cannot help, so we
+// stop immediately rather than burning quota. 401/403 = key rejected or restricted; 429 = quota.
+const KEY_LEVEL_STATUSES = new Set([401, 403, 429]);
+
 // Call Gemini over HTTPS. apiKey is used only within this function scope.
-// The model is resolved from the account's available models (see resolveModel).
+// Walks the account's available models best-first (see resolveModelCandidates), trying the
+// next one on any model-level failure (404 retired, 400 rejected, 5xx transient). It only
+// gives up when a key-level error occurs (bad/quota'd key) or every model has been tried —
+// so a single unavailable model never blocks generation while another model still works.
 export async function callGemini(apiKey, prompt) {
-  const model = await resolveModel(apiKey);
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
+  const candidates = await resolveModelCandidates(apiKey);
+  // Try the model that worked last this session first, then the rest of the candidates.
+  const ordered = cachedModel
+    ? [cachedModel, ...candidates.filter((m) => m !== cachedModel)]
+    : candidates;
+
+  let lastError = null;
+  for (const model of ordered) {
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' },
+        }),
+      });
+    } catch (err) {
+      // Network-level failure — same for every model. Never surface the raw cause.
+      throw new GeminiCallError('Gemini request failed', { cause: err });
+    }
+
+    if (response.ok) {
+      cachedModel = model; // remember the working model for the rest of the session
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new GeminiParseError('Empty Gemini response');
+      }
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        throw new GeminiParseError('Gemini response was not valid JSON', err);
+      }
+    }
+
+    // Non-OK: drop this model as the cached choice so we don't keep reusing a dead one.
+    if (cachedModel === model) cachedModel = null;
+
+    // Key-level failure won't change across models — stop now. Status only, never the body.
+    if (KEY_LEVEL_STATUSES.has(response.status)) {
+      throw new GeminiCallError(`Gemini API error: ${response.status}`, {
+        status: response.status,
+      });
+    }
+
+    // Model-level failure — remember it and try the next candidate.
+    lastError = new GeminiCallError(`Gemini API error: ${response.status}`, {
+      status: response.status,
     });
-  } catch (err) {
-    // Network-level failure — never surface the raw cause to the UI.
-    throw new GeminiCallError('Gemini request failed', err);
   }
 
-  if (!response.ok) {
-    // A cached model that has since been retired returns 404 — drop it so the next
-    // attempt rediscovers a live model instead of failing forever.
-    if (response.status === 404) cachedModel = null;
-    // Status only — never the response body (may echo the key or prompt).
-    throw new GeminiCallError(`Gemini API error: ${response.status}`);
-  }
+  // Every candidate model failed — surface the last status (404 if we somehow had none).
+  throw lastError || new GeminiCallError('No usable Gemini model', { status: 404 });
+}
 
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new GeminiParseError('Empty Gemini response');
-  }
-
+// Lightweight liveness check for a key, used by Settings when saving. Hits ListModels (the
+// same endpoint discovery uses) so a key that can't list models — invalid, restricted, or
+// wrong API — is caught before it is ever stored. Returns { ok } and, on failure, the HTTP
+// `status` for messaging, or `network:true` when the check itself couldn't reach Google
+// (inconclusive, not invalid). Never returns or logs the key or any response body.
+export async function validateApiKey(apiKey) {
+  let res;
   try {
-    return JSON.parse(text);
-  } catch (err) {
-    throw new GeminiParseError('Gemini response was not valid JSON', err);
+    res = await fetch(`${API_BASE}/models?key=${apiKey}`);
+  } catch {
+    return { ok: false, network: true };
   }
+  if (res.ok) return { ok: true };
+  return { ok: false, status: res.status };
 }
 
 // Build a deterministic, JSON-only prompt for a pool of MCQs for a day + exam type.

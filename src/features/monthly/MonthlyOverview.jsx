@@ -4,7 +4,7 @@ import { Button, Card, EmptyState, ErrorMessage, Spinner } from '../../component
 import { useApp } from '../../context/AppContext';
 import { useMonthlyOverview, EmptyMonthError } from '../../hooks/useMonthlyOverview';
 import { MissingApiKeyError } from '../../hooks/useDailyAffairs';
-import { GeminiCallError } from '../../lib/gemini';
+import { GeminiCallError, geminiErrorMessage } from '../../lib/gemini';
 import { GeminiParseError } from '../../lib/firestore';
 import { ExamFilter } from '../daily/ExamFilter';
 import { ExportToolbar } from './ExportToolbar';
@@ -12,7 +12,7 @@ import { ExportToolbar } from './ExportToolbar';
 // Map a thrown error to friendly, generic UI text — raw Gemini output is never shown.
 function messageFor(error) {
   if (error instanceof GeminiCallError) {
-    return 'AI service unavailable. Check your API key or try again.';
+    return geminiErrorMessage(error);
   }
   if (error instanceof GeminiParseError) {
     return 'AI returned unexpected data. Please try again.';

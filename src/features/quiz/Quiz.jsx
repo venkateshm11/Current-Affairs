@@ -3,7 +3,7 @@ import { Button, EmptyState, ErrorMessage, Spinner } from '../../components/ui';
 import { useApp } from '../../context/AppContext';
 import { useQuizEngine } from '../../hooks/useQuizEngine';
 import { MissingApiKeyError } from '../../hooks/useDailyAffairs';
-import { GeminiCallError } from '../../lib/gemini';
+import { GeminiCallError, geminiErrorMessage } from '../../lib/gemini';
 import { GeminiParseError } from '../../lib/firestore';
 import { todayIST } from '../../utils/dates';
 import { ExamFilter } from '../daily/ExamFilter';
@@ -14,7 +14,7 @@ import { QuizResults } from './QuizResults';
 // Map a thrown error to friendly, generic UI text — raw Gemini output is never shown.
 function messageFor(error) {
   if (error instanceof GeminiCallError) {
-    return 'AI service unavailable. Check your API key or try again.';
+    return geminiErrorMessage(error);
   }
   if (error instanceof GeminiParseError) {
     return 'Could not generate questions. Please try again.';

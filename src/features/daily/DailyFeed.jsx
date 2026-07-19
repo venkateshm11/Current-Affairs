@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useDailyAffairs, MissingApiKeyError } from '../../hooks/useDailyAffairs';
 import { useStreak } from '../../hooks/useStreak';
 import { useBookmarks } from '../../hooks/useBookmarks';
-import { GeminiCallError } from '../../lib/gemini';
+import { GeminiCallError, geminiErrorMessage } from '../../lib/gemini';
 import { GeminiParseError } from '../../lib/firestore';
 import { todayIST } from '../../utils/dates';
 import { DailyFeedCard } from './DailyFeedCard';
@@ -16,7 +16,7 @@ const today = () => todayIST();
 // Map a thrown error to friendly, generic UI text — raw Gemini output is never shown.
 function messageFor(error) {
   if (error instanceof GeminiCallError) {
-    return 'AI service unavailable. Check your API key or try again.';
+    return geminiErrorMessage(error);
   }
   if (error instanceof GeminiParseError) {
     return 'AI returned unexpected data. Please try again.';

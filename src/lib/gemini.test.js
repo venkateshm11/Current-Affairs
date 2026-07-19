@@ -1,11 +1,42 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import {
   buildDailyPrompt,
   validateDailyResponse,
   buildMcqPrompt,
   validateMcqResponse,
+  resolveModelCandidates,
+  callGemini,
+  geminiErrorMessage,
+  validateApiKey,
+  resetModelCache,
+  GeminiCallError,
 } from './gemini';
 import { GeminiParseError } from './firestore';
+
+// Build a fake fetch Response with a given status and JSON body.
+function res(status, body) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  };
+}
+
+// A well-formed generateContent success body wrapping arbitrary JSON text.
+function genContent(obj) {
+  return res(200, {
+    candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] } }],
+  });
+}
+
+const OK_DAILY = { categories: [{ name: 'X', icon: '💰', items: [{ title: 't', detail: 'd', importance: 'low', tags: [] }] }] };
+// A ListModels body advertising two generateContent-capable models.
+const LIST_BODY = {
+  models: [
+    { name: 'models/gemini-flash-latest', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+  ],
+};
 
 const validResponse = {
   categories: [
@@ -147,5 +178,111 @@ describe('validateMcqResponse', () => {
       ],
     };
     expect(() => validateMcqResponse(bad)).toThrow(GeminiParseError);
+  });
+});
+
+describe('resolveModelCandidates', () => {
+  beforeEach(() => resetModelCache());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('ranks preferred -latest aliases first and always appends a fallback', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => res(200, LIST_BODY)));
+    const models = await resolveModelCandidates('key');
+    expect(models[0]).toBe('gemini-flash-latest');
+    expect(models).toContain('gemini-2.5-flash');
+    // De-duplicated, and the hard fallback is present as a last resort.
+    expect(new Set(models).size).toBe(models.length);
+    expect(models).toContain('gemini-flash-latest');
+  });
+
+  it('falls back to defaults when ListModels fails (never throws)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => res(403, {})));
+    const models = await resolveModelCandidates('key');
+    expect(models.length).toBeGreaterThan(0);
+    expect(models).toContain('gemini-flash-latest');
+  });
+});
+
+describe('callGemini model fallback', () => {
+  beforeEach(() => resetModelCache());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('walks to the next model when the first returns 404, and succeeds', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url.includes('/models?key=')) return res(200, LIST_BODY);
+      if (url.includes('gemini-flash-latest:generateContent')) return res(404, {});
+      if (url.includes('gemini-2.5-flash:generateContent')) return genContent(OK_DAILY);
+      return res(500, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const out = await callGemini('key', 'prompt');
+    expect(out).toEqual(OK_DAILY);
+    // Tried the retired model, then the next candidate.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('gemini-2.5-flash:generateContent'),
+      expect.anything(),
+    );
+  });
+
+  it('stops immediately on a key-level status (403) without trying more models', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url.includes('/models?key=')) return res(200, LIST_BODY);
+      return res(403, {}); // every generateContent rejected
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callGemini('key', 'prompt')).rejects.toMatchObject({
+      name: 'GeminiCallError',
+      status: 403,
+    });
+    // Only one generateContent attempt (plus the ListModels call).
+    const genCalls = fetchMock.mock.calls.filter(([u]) => u.includes('generateContent'));
+    expect(genCalls).toHaveLength(1);
+  });
+
+  it('throws the last error when every model fails with a model-level status', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (url.includes('/models?key=')) return res(200, LIST_BODY);
+      return res(404, {}); // all models retired
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callGemini('key', 'prompt')).rejects.toMatchObject({
+      name: 'GeminiCallError',
+      status: 404,
+    });
+  });
+});
+
+describe('geminiErrorMessage', () => {
+  it('maps key-level statuses to actionable text', () => {
+    expect(geminiErrorMessage({ status: 400 })).toMatch(/invalid/i);
+    expect(geminiErrorMessage({ status: 403 })).toMatch(/rejected/i);
+    expect(geminiErrorMessage({ status: 429 })).toMatch(/quota/i);
+  });
+
+  it('falls back to a generic message for unknown/null status', () => {
+    expect(geminiErrorMessage({ status: null })).toMatch(/unavailable/i);
+    expect(geminiErrorMessage(new GeminiCallError('x'))).toMatch(/unavailable/i);
+  });
+});
+
+describe('validateApiKey', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('returns ok:true when ListModels succeeds', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => res(200, LIST_BODY)));
+    expect(await validateApiKey('key')).toEqual({ ok: true });
+  });
+
+  it('returns the HTTP status when the key is rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => res(400, {})));
+    expect(await validateApiKey('key')).toEqual({ ok: false, status: 400 });
+  });
+
+  it('flags a network failure as inconclusive (not invalid)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    expect(await validateApiKey('key')).toEqual({ ok: false, network: true });
   });
 });

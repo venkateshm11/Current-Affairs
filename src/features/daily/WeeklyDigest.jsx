@@ -2,14 +2,14 @@ import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, ErrorMessage, Spinner } from '../../components/ui';
 import { useWeeklyDigest, EmptyWeekError } from '../../hooks/useWeeklyDigest';
 import { MissingApiKeyError } from '../../hooks/useDailyAffairs';
-import { GeminiCallError } from '../../lib/gemini';
+import { GeminiCallError, geminiErrorMessage } from '../../lib/gemini';
 import { GeminiParseError } from '../../lib/firestore';
 import { todayIST } from '../../utils/dates';
 
 // Map a thrown error to friendly, generic UI text — raw Gemini output is never shown.
 function messageFor(error) {
   if (error instanceof GeminiCallError) {
-    return 'AI service unavailable. Check your API key or try again.';
+    return geminiErrorMessage(error);
   }
   if (error instanceof GeminiParseError) {
     return 'AI returned unexpected data. Please try again.';

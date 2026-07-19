@@ -17,6 +17,7 @@ vi.mock('../../hooks/useDailyAffairs', () => ({
 
 vi.mock('../../lib/gemini', () => ({
   GeminiCallError: class GeminiCallError extends Error {},
+  geminiErrorMessage: () => 'AI service unavailable. Check your API key or try again.',
 }));
 
 vi.mock('../../lib/firestore', () => ({
