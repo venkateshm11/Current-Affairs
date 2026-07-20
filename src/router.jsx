@@ -11,6 +11,7 @@ import { Dashboard } from './features/dashboard/Dashboard';
 import { Archive } from './features/archive/Archive';
 import { Search } from './features/search/Search';
 import { MonthlyOverview } from './features/monthly/MonthlyOverview';
+import { CommunityPool } from './features/community/CommunityPool';
 import { Settings } from './features/settings/Settings';
 
 export const router = createBrowserRouter([
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
           { path: 'archive', element: <Archive /> },
           { path: 'search', element: <Search /> },
           { path: 'monthly', element: <MonthlyOverview /> },
+          { path: 'community', element: <CommunityPool /> },
           { path: 'settings', element: <Settings /> },
         ],
       },

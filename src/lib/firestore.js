@@ -439,3 +439,20 @@ export async function saveSharedDaily(date, examType, categories) {
     throw new FirestoreWriteError('Failed to save shared daily', err);
   }
 }
+
+// List the days available in the shared pool for the Community Pool browse page (Phase 8).
+// A public read of the shared collection — no uid, no user data, no write, no Gemini. The
+// `sharedDaily` read rule (request.auth != null) covers this list query. Returns a light
+// { id, date, examType } per doc; the full categories payload is loaded on demand by the day
+// reader via getSharedDaily, so the list stays cheap.
+export async function listSharedDaily() {
+  try {
+    const snap = await getDocs(collection(db, 'sharedDaily'));
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, date: data.date, examType: data.examType };
+    });
+  } catch (err) {
+    throw new FirestoreReadError('Failed to list shared daily', err);
+  }
+}

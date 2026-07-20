@@ -20,6 +20,7 @@ const NAV_LINKS = [
   { to: '/archive', label: 'Archive' },
   { to: '/search', label: 'Search' },
   { to: '/monthly', label: 'Monthly' },
+  { to: '/community', label: 'Community' },
 ];
 
 // Primary set shown directly in the mobile bottom navigation. Each carries an icon
@@ -41,6 +42,7 @@ const MORE_LINKS = [
   { to: '/archive', label: 'Archive', icon: '🗄️' },
   { to: '/search', label: 'Search', icon: '🔍' },
   { to: '/monthly', label: 'Monthly', icon: '📅' },
+  { to: '/community', label: 'Community', icon: '🌐' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
